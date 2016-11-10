@@ -1,4 +1,7 @@
 *
 !src
 !config
+!src/*/*
+!config/*
+!config/*/*
 !.gitignore
