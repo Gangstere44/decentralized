@@ -2,6 +2,7 @@ package template;
 
 //the list of imports
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 
@@ -19,7 +20,7 @@ import logist.topology.Topology.City;
 /**
  * A very simple auction agent that assigns all tasks to its first vehicle and
  * handles them sequentially.
- * 
+ *
  */
 @SuppressWarnings("unused")
 public class AuctionTemplate implements AuctionBehavior {
@@ -30,6 +31,12 @@ public class AuctionTemplate implements AuctionBehavior {
 	private Random random;
 	private Vehicle vehicle;
 	private City currentCity;
+
+	private HashSet<Task> ourTasks = new HashSet<Task>();
+	private long totalReward = 0;
+	private int INIT_POOL_SIZE = 10;
+	private int INIT_MAX_ITER = 10000;
+	private Centralized us = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
 
 	@Override
 	public void setup(Topology topology, TaskDistribution distribution,
@@ -47,14 +54,27 @@ public class AuctionTemplate implements AuctionBehavior {
 
 	@Override
 	public void auctionResult(Task previous, int winner, Long[] bids) {
+
 		if (winner == agent.id()) {
-			currentCity = previous.deliveryCity;
+			//currentCity = previous.deliveryCity;
+			totalReward += bids[agent.id()];
+		} else {
+			ourTasks.remove(previous);
 		}
 	}
-	
+
 	@Override
 	public Long askPrice(Task task) {
 
+		Solution ourSol1 = ourTasks.isEmpty() ? null : us.computeCentralized(agent.vehicles(), ourTasks);
+		ourTasks.add(task);
+		Solution ourSol2 = us.computeCentralized(agent.vehicles(), ourTasks);
+
+		Long marginalCost = ourSol1 == null ? Math.round(ourSol2.getTotalCost()) :
+							Math.max(0, Math.round(ourSol2.getTotalCost() - ourSol1.getTotalCost()));
+		return marginalCost;
+
+		/*
 		if (vehicle.capacity() < task.weight)
 			return null;
 
@@ -68,11 +88,20 @@ public class AuctionTemplate implements AuctionBehavior {
 		double bid = ratio * marginalCost;
 
 		return (long) Math.round(bid);
+		*/
 	}
 
 	@Override
 	public List<Plan> plan(List<Vehicle> vehicles, TaskSet tasks) {
-		
+
+		Solution sol = us.computeCentralized(vehicles, tasks);
+		System.out.println("Total reward for agent " + agent.id() + " is : " + totalReward);
+		System.out.println("Total cost for agent " + agent.id() + " is : " + sol.getTotalCost());
+		System.out.println("Total benefice for agent " + agent.id() + " is : " + (totalReward - sol.getTotalCost()));
+
+		return createPlanFromSolution(sol);
+
+		/*
 //		System.out.println("Agent " + agent.id() + " has tasks " + tasks);
 
 		Plan planVehicle1 = naivePlan(vehicle, tasks);
@@ -83,6 +112,38 @@ public class AuctionTemplate implements AuctionBehavior {
 			plans.add(Plan.EMPTY);
 
 		return plans;
+		*/
+	}
+
+
+	private List<Plan> createPlanFromSolution(Solution solution) {
+		List<Plan> toReturn = new ArrayList<Plan>();
+		for (int i = 0; i < solution.getVehiclesFirstTask().length; i++) {
+			AgentTask current = solution.getVehiclesFirstTask()[i];
+			Plan plan = new Plan(solution.getVehicles().get(i).getCurrentCity());
+			City currentCity = solution.getVehicles().get(i).getCurrentCity();
+			while (current != null) {
+				if (current.isPickup()) {
+					for (City c : currentCity
+							.pathTo(current.getTask().pickupCity)) {
+						plan.appendMove(c);
+					}
+					plan.appendPickup(current.getTask());
+					currentCity = current.getTask().pickupCity;
+				} else {
+					for (City c : currentCity
+							.pathTo(current.getTask().deliveryCity)) {
+						plan.appendMove(c);
+					}
+					plan.appendDelivery(current.getTask());
+					currentCity = current.getTask().deliveryCity;
+				}
+				current = current.getNext();
+			}
+			toReturn.add(plan);
+		}
+
+		return toReturn;
 	}
 
 	private Plan naivePlan(Vehicle vehicle, TaskSet tasks) {
