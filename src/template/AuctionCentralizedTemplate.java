@@ -37,14 +37,14 @@ public class AuctionCentralizedTemplate implements AuctionBehavior {
 	private static final double BID_MARGIN_STEP_PERCENT = 0.05;
 	private static final double BID_MIN_MARGIN_PERCENT = 0.05;
 	private static final double BID_MAX_MARGIN_PERCENT = 0.5;
-	
+
 	private Topology topology;
 	private TaskDistribution distribution;
 	private Agent agent;
 	private Random random;
 	private Vehicle vehicle;
 	private City currentCity;
-	
+
 	private long nbTasksHandled = 0;
 	private double avgTasksWork = 0;
 
@@ -58,7 +58,7 @@ public class AuctionCentralizedTemplate implements AuctionBehavior {
 	private int ournbTasksHandled = 0;
 	//private LinkedList<Long> ourLastGuesses = new LinkedList<Long>();
 	private Centralized us = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
-	
+
 	private HashSet<Task> theirTasks = new HashSet<Task>();
 	private double theirLastCost = 0;
 	private double theirTempCost = 0;
@@ -85,13 +85,13 @@ public class AuctionCentralizedTemplate implements AuctionBehavior {
 		Long ourBid = bids[agent.id()];
 		// Dangerous if more than 2 companies or only us
 		Long theirBid = bids[1 - agent.id()];
-		
+
 		if (winner == agent.id()) {
 			//currentCity = previous.deliveryCity;
 			ournbTasksHandled++;
 			ourTotalReward += ourBid;
 			ourLastCost = ourTempCost;
-			
+
 			// Remove task
 			for (Iterator<Task> i = theirTasks.iterator(); i.hasNext();) {
 			    Task element = i.next();
@@ -109,7 +109,7 @@ public class AuctionCentralizedTemplate implements AuctionBehavior {
 			        break;
 			    }
 			}
-			
+
 			// Dangerous if more than 2 companies or only us
 			theirTotalReward += theirBid;
 			theirLastCost = theirTempCost;
@@ -126,10 +126,10 @@ public class AuctionCentralizedTemplate implements AuctionBehavior {
 			ourTempCost += ourNewSol.getTotalCost();
 		}
 		ourTempCost /= NB_CENTRALIZED_RUN;
-		
+
 		Long ourMarginalCost = ourLastCost == 0 ? Math.round(ourTempCost) :
 							Math.max(0, Math.round(ourTempCost - ourLastCost));
-		
+
 		//THEM
 		theirTasks.add(task);
 		theirTempCost = 0;
@@ -138,18 +138,18 @@ public class AuctionCentralizedTemplate implements AuctionBehavior {
 			theirTempCost += theirNewSol.getTotalCost();
 		}
 		theirTempCost /= NB_CENTRALIZED_RUN;
-		
+
 		Long theirMarginalCost = theirLastCost == 0 ? Math.round(theirTempCost) :
 							Math.max(0, Math.round(theirTempCost - theirLastCost));
-		
+
 		lastGuessUseMargin = false;
 		Long toBid = ourMarginalCost;
 		if (ourMarginalCost < theirMarginalCost) {
 			toBid += (long) ((theirMarginalCost - ourMarginalCost) * (1 - 0.1));
 		}
-		
+
 		nbTasksHandled++;
-		
+
 		return toBid;
 
 		/*
@@ -179,12 +179,12 @@ public class AuctionCentralizedTemplate implements AuctionBehavior {
 			System.out.println("Total cost for agent " + agent.id() + " is : " + sol.getTotalCost());
 			System.out.println("Total benefice for agent " + agent.id() + " is : " + (ourTotalReward - sol.getTotalCost()));
 			System.out.println();
-			
+
 			return createPlanFromSolution(sol);
 		}
 		else {
 			// If nothing
-			
+
 			List<Plan> plans = new ArrayList<Plan>();
 			while (plans.size() < vehicles.size()) {
 				plans.add(Plan.EMPTY);
