@@ -12,5 +12,17 @@
 		<set class-path="bin/"></set>
 		<set class-name="template.AuctionTemplate"/>
 	</agent>
+	<agent name="auction-random">
+		<set class-path="bin/"></set>
+		<set class-name="template.AuctionRandomTemplate"/>
+	</agent>
+	<agent name="auction-centralized">
+		<set class-path="bin/"></set>
+		<set class-name="template.AuctionCentralizedTemplate"/>
+	</agent>
+	<agent name="auction-dummy">
+		<set class-path="bin/"></set>
+		<set class-name="template.AuctionDummyTemplate"/>
+	</agent>
 
 </agents>

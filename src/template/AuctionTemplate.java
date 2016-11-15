@@ -30,10 +30,10 @@ public class AuctionTemplate implements AuctionBehavior {
 	private static final int INIT_POOL_SIZE = 10;
 	private static final int INIT_MAX_ITER = 50000;
 	private static final long MIN_TASKS_FOR_SPECULATION = 5;
-	private static final long MIN_BID = 1000;
-	private static final int NB_CENTRALIZED_RUN = 5;
-	private static final int WINDOW_SIZE = 10;
-	private static final double GUESS_ACCEPTANCE_PERCENT = 0.2;
+	private static final long MIN_TASKS_FOR_CENTRALIZED = 20;
+	private static final int NB_CENTRALIZED_RUN = 3;
+	private static final int WINDOW_SIZE = 5;
+	private static final double GUESS_ACCEPTANCE_PERCENT = 0.4;
 	private static final double BID_MARGIN_STEP_PERCENT = 0.05;
 	private static final double BID_MIN_MARGIN_PERCENT = 0.05;
 	private static final double BID_MAX_MARGIN_PERCENT = 0.5;
@@ -55,6 +55,7 @@ public class AuctionTemplate implements AuctionBehavior {
 	private double currentBidMargin = 0.25;
 	private boolean lastGuessUseMargin = false;
 	private Long lastGuess = 0l;
+	private int ournbTasksHandled = 0;
 	//private LinkedList<Long> ourLastGuesses = new LinkedList<Long>();
 	private Centralized us = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
 	
@@ -113,6 +114,7 @@ public class AuctionTemplate implements AuctionBehavior {
 		if (winner == agent.id()) {
 			//currentCity = previous.deliveryCity;
 			System.out.println("Our agent won by bidding: " + ourBid);
+			ournbTasksHandled++;
 			ourTotalReward += ourBid;
 			ourLastCost = ourTempCost;
 			
@@ -196,7 +198,8 @@ public class AuctionTemplate implements AuctionBehavior {
 		
 		
 		lastGuessUseMargin = false;
-		Long toBid = (long) (ourMarginalCost * (1 + penalty));
+		Long toBid = (long) (ourMarginalCost * Math.min(1, ((double) (ournbTasksHandled + 1) / MIN_TASKS_FOR_CENTRALIZED))
+				* (1 + penalty));
 		System.out.println("toBid: " + toBid);
 		if (ourMarginalCost < theirMarginalCost) {
 			lastGuessUseMargin = true;
@@ -209,7 +212,7 @@ public class AuctionTemplate implements AuctionBehavior {
 			for (Long l : theirLastBids) {
 				minBid += l;
 			}
-			minBid = minBid / theirLastBids.size() / 2;
+			minBid = (long) (minBid / theirLastBids.size() * 0.8);
 			if (toBid < minBid) {
 				System.out.println("Trying to bid too low (" + toBid + "), changing it to: " + minBid);
 				toBid = minBid;
@@ -242,14 +245,25 @@ public class AuctionTemplate implements AuctionBehavior {
 	@Override
 	public List<Plan> plan(List<Vehicle> vehicles, TaskSet tasks) {
 
-		Solution sol = us.computeCentralized(vehicles, tasks);
-		System.out.println("Agent: " + agent.name());
-		System.out.println("Total reward for agent " + agent.id() + " is : " + ourTotalReward);
-		System.out.println("Total cost for agent " + agent.id() + " is : " + sol.getTotalCost());
-		System.out.println("Total benefice for agent " + agent.id() + " is : " + (ourTotalReward - sol.getTotalCost()));
-		System.out.println();
-		
-		return createPlanFromSolution(sol);
+		if (!tasks.isEmpty()) {
+			Solution sol = us.computeCentralized(vehicles, tasks);
+			System.out.println("Agent: " + agent.name());
+			System.out.println("Total reward for agent " + agent.id() + " is : " + ourTotalReward);
+			System.out.println("Total cost for agent " + agent.id() + " is : " + sol.getTotalCost());
+			System.out.println("Total benefice for agent " + agent.id() + " is : " + (ourTotalReward - sol.getTotalCost()));
+			System.out.println();
+			
+			return createPlanFromSolution(sol);
+		}
+		else {
+			// If nothing
+			
+			List<Plan> plans = new ArrayList<Plan>();
+			while (plans.size() < vehicles.size()) {
+				plans.add(Plan.EMPTY);
+			}
+			return plans;
+		}
 
 		/*
 //		System.out.println("Agent " + agent.id() + " has tasks " + tasks);
