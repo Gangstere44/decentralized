@@ -11,10 +11,25 @@ public class Centralized {
 
 	private int poolSize;
 	private int maxIter;
+	private Solution initSolution = null;
 
 	public Centralized(int poolSize, int maxIter) {
 		this.poolSize = poolSize;
 		this.maxIter = maxIter;
+	}
+
+	public Centralized(int poolSize, int maxIter, Solution initSolution) {
+		this.poolSize = poolSize;
+		this.maxIter = maxIter;
+		this.initSolution = initSolution;
+	}
+
+	public void setInitSolution(Solution is) {
+		if(is != null && is.checkCorrectSolution()) {
+			initSolution = is.clone();
+		} else {
+			initSolution = null;
+		}
 	}
 
 	public Solution computeCentralized(List<Vehicle> vehicles, TaskSet tasks) {
@@ -24,13 +39,12 @@ public class Centralized {
 			tmp.add(t);
 		}
 		return computeCentralized(vehicles, tmp);
-
 	}
 
 	public Solution computeCentralized(List<Vehicle> vehicles, HashSet<Task> tasks) {
 		// Create first solution
 
-		Solution currentSolution = createInitSolution(vehicles, tasks);
+		Solution currentSolution = initSolution == null ? createInitSolution(vehicles, tasks) : initSolution;
 		Solution bestSolution = currentSolution;
 
 		int iteration = 0;

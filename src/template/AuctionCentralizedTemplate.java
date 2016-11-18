@@ -58,6 +58,7 @@ public class AuctionCentralizedTemplate implements AuctionBehavior {
 	private int ournbTasksHandled = 0;
 	//private LinkedList<Long> ourLastGuesses = new LinkedList<Long>();
 	private Centralized us = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
+	private Solution ourBestSolution = null;
 
 	private HashSet<Task> theirTasks = new HashSet<Task>();
 	private double theirLastCost = 0;

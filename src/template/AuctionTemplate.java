@@ -8,6 +8,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 
+import org.apache.commons.math.analysis.NewtonSolver;
+
+import cern.jet.math.Bessel;
 import logist.Measures;
 import logist.behavior.AuctionBehavior;
 import logist.agent.Agent;
@@ -28,10 +31,11 @@ import logist.topology.Topology.City;
 public class AuctionTemplate implements AuctionBehavior {
 
 	private static final int INIT_POOL_SIZE = 10;
-	private static final int INIT_MAX_ITER = 50000;
+	private static final int INIT_MAX_ITER = 10000;
 	private static final long MIN_TASKS_FOR_SPECULATION = 5;
 	private static final long MIN_TASKS_FOR_CENTRALIZED = 10;
 	private static final int NB_CENTRALIZED_RUN = 3;
+	private static final int NB_TRY_WITH_NEW_INIT = 3;
 	private static final int WINDOW_SIZE = 5;
 	private static final double GUESS_ACCEPTANCE_PERCENT = 0.4;
 	private static final double BID_MARGIN_STEP_PERCENT = 0.05;
@@ -58,6 +62,8 @@ public class AuctionTemplate implements AuctionBehavior {
 	private int ournbTasksHandled = 0;
 	//private LinkedList<Long> ourLastGuesses = new LinkedList<Long>();
 	private Centralized us = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
+	private Solution bestSolution = null;
+	private Solution newBestSol = null;
 
 	private HashSet<Task> theirTasks = new HashSet<Task>();
 	private double theirLastCost = 0;
@@ -126,6 +132,9 @@ public class AuctionTemplate implements AuctionBehavior {
 			        break;
 			    }
 			}
+
+			// refresh the new best Solution
+			bestSolution = newBestSol;
 		} else {
 			System.out.println("The other agent won by bidding: " + theirBid);
 
@@ -170,11 +179,46 @@ public class AuctionTemplate implements AuctionBehavior {
 		// Put penalties together
 		double penalty = workPenalty;
 
+
 		// US
 		ourTasks.add(task);
+
+		// we wait to have at least one solution
+		if(bestSolution != null) {
+			Solution nextPossibleBestSolution = bestSolution.clone();
+			// firstly, we only add the new task to the current best solution and try
+			// centralized on it
+			AgentTask p = new AgentTask(task, true);
+			AgentTask d = new AgentTask(task, false);
+			nextPossibleBestSolution.addTaskForVehicle(0, d, null);
+			nextPossibleBestSolution.addTaskForVehicle(0, p, null);
+
+			Solution tmpNewBestSol = null;
+			newBestSol = null;
+			// we try to find a solution with the old best solution
+			for(int i = 0; i < NB_CENTRALIZED_RUN; i++) {
+				Solution tmpSol = null;
+				us.setInitSolution(nextPossibleBestSolution);
+				// we try again with the init solution being the last solution computed
+				for(int j = 0; j < NB_TRY_WITH_NEW_INIT; j++) {
+					tmpSol = us.computeCentralized(agent.vehicles(), ourTasks);
+					tmpNewBestSol = tmpNewBestSol == null || tmpNewBestSol.getTotalCost() > tmpSol.getTotalCost() ? tmpSol : tmpNewBestSol;
+					us.setInitSolution(tmpSol);
+				}
+
+				// we take only if the new solution are better than the previous one
+				newBestSol = newBestSol == null || newBestSol.getTotalCost() > tmpNewBestSol.getTotalCost() ? tmpNewBestSol : newBestSol;
+			}
+
+			// we get ready to do normal centralized
+			us.setInitSolution(null);
+		}
+		// now we try to recompute entierly centralized
+		//ourTasks.add(task);
 		ourTempCost = 0;
 		for (int i = 0; i < NB_CENTRALIZED_RUN; i++) {
 			Solution ourNewSol = us.computeCentralized(agent.vehicles(), ourTasks);
+			newBestSol = newBestSol == null || newBestSol.getTotalCost() > ourNewSol.getTotalCost() ? ourNewSol : newBestSol;
 			ourTempCost += ourNewSol.getTotalCost();
 		}
 		ourTempCost /= NB_CENTRALIZED_RUN;
@@ -255,7 +299,8 @@ public class AuctionTemplate implements AuctionBehavior {
 	public List<Plan> plan(List<Vehicle> vehicles, TaskSet tasks) {
 
 		if (!tasks.isEmpty()) {
-			Solution sol = us.computeCentralized(vehicles, tasks);
+			//Solution sol = us.computeCentralized(vehicles, tasks);
+			Solution sol = Solution.recreateSolutionWithGoodTasks(bestSolution, tasks);
 			System.out.println("Agent: " + agent.name());
 			System.out.println("Total reward for agent " + agent.id() + " is : " + ourTotalReward);
 			System.out.println("Total cost for agent " + agent.id() + " is : " + sol.getTotalCost());

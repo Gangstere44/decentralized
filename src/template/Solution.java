@@ -7,6 +7,7 @@ import java.util.Set;
 
 import logist.simulation.Vehicle;
 import logist.task.Task;
+import logist.task.TaskSet;
 import logist.topology.Topology.City;
 
 public class Solution {
@@ -54,6 +55,49 @@ public class Solution {
 
 	}
 
+	public static Solution recreateSolutionWithGoodTasks(Solution toCopy, TaskSet correctTS) {
+
+		HashSet<Task> tmpSet = new HashSet<Task>();
+		tmpSet.addAll(correctTS);
+
+		AgentTask[] correctAgentTask = new AgentTask[toCopy.vehiclesFirstTask.length];
+
+		for(int i = 0; i < toCopy.vehiclesFirstTask.length; i++) {
+
+			AgentTask tmp = toCopy.vehiclesFirstTask[0];
+			AgentTask prev = null;
+			while(tmp != null) {
+
+				for(Task t : correctTS) {
+
+					if(t.id == tmp.getTask().id) {
+
+						AgentTask newAT = new AgentTask(t, tmp.isPickup());
+
+						if(correctAgentTask[0] == null) {
+							correctAgentTask[0] = newAT;
+						}
+
+						if(prev == null) {
+							prev = newAT;
+						} else {
+							prev.setNext(newAT);
+							prev = newAT;
+						}
+
+						break;
+					}
+				}
+
+				tmp = tmp.getNext();
+			}
+
+		}
+
+		return new Solution(toCopy.getTotalCost(), correctAgentTask, toCopy.vehicles, toCopy.taskCounter);
+	}
+
+	@Override
 	public Solution clone() {
 		AgentTask[] vehiclesFirstTask = new AgentTask[this.vehiclesFirstTask.length];
 
