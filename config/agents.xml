@@ -24,5 +24,9 @@
 		<set class-path="bin/"></set>
 		<set class-name="template.AuctionDummyTemplate"/>
 	</agent>
+	<agent name="auction-weights">
+		<set class-path="bin/"></set>
+		<set class-name="template.AuctionWeightsTemplate"/>
+	</agent>
 
 </agents>
