@@ -64,18 +64,20 @@ public class Solution {
 
 		for(int i = 0; i < toCopy.vehiclesFirstTask.length; i++) {
 
-			AgentTask tmp = toCopy.vehiclesFirstTask[0];
+			AgentTask tmp = toCopy.vehiclesFirstTask[i];
 			AgentTask prev = null;
 			while(tmp != null) {
+
+
 
 				for(Task t : correctTS) {
 
 					if(t.id == tmp.getTask().id) {
 
-						AgentTask newAT = tmp.isPickup() ? new AgentTask(t, tmp.isPickup()) : new AgentTask(t, false);
+						AgentTask newAT = tmp.isPickup() ? new AgentTask(t, true) : new AgentTask(t, false);
 
-						if(correctAgentTask[0] == null) {
-							correctAgentTask[0] = newAT;
+						if(correctAgentTask[i] == null) {
+							correctAgentTask[i] = newAT;
 						}
 
 						if(prev == null) {

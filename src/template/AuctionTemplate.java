@@ -29,11 +29,11 @@ import logist.topology.Topology.City;
 public class AuctionTemplate implements AuctionBehavior {
 
 	private static final int INIT_POOL_SIZE = 10;
-	private static final int INIT_MAX_ITER = 50000;
+	private static final int INIT_MAX_ITER = 10000;
 	private static final long MIN_TASKS_FOR_SPECULATION = 5;
 	private static final long MIN_TASKS_FOR_CENTRALIZED = 10;
-	private static final int NB_CENTRALIZED_RUN = 2;
-	private static final int NB_TRY_WITH_NEW_INIT = 2;
+	private static final int NB_CENTRALIZED_RUN = 1;
+	private static final int NB_TRY_WITH_NEW_INIT = 1;
 	private static final int WINDOW_SIZE = 5;
 	private static final double GUESS_ACCEPTANCE_PERCENT = 0.4;
 	private static final double BID_MARGIN_STEP_PERCENT = 0.05;
@@ -69,11 +69,11 @@ public class AuctionTemplate implements AuctionBehavior {
 	private long theirTotalReward = 0;
 	private LinkedList<Long> theirLastBids = new LinkedList<Long>();
 	private Centralized them = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
-	
+
 	private double averageEdgeWeight = 0.;
 	private static final double MAX_VARIANCE_WEIGHT = 0.4;
 	private static final double PREDICTION_ERROR_MARGIN = 0.2;
-	
+
 	private Map<EdgeCity, Double> weights = new HashMap<EdgeCity, Double>();
 
 
@@ -91,7 +91,7 @@ public class AuctionTemplate implements AuctionBehavior {
 
 		long seed = -9019554669489983951L * currentCity.hashCode() * agent.id();
 		this.random = new Random(seed);
-		
+
 		for (City c1 : topology.cities()) {
 			for (City c2 : topology.cities()) {
 				List<City> path = c1.pathTo(c2);
@@ -116,7 +116,7 @@ public class AuctionTemplate implements AuctionBehavior {
 				}
 			}
 		}
-		
+
 		for (Map.Entry<EdgeCity, Double> entry : weights.entrySet()) {
 			averageEdgeWeight += entry.getValue();
 		}
@@ -204,29 +204,29 @@ public class AuctionTemplate implements AuctionBehavior {
 		 * - keep track of best best solution
 		 * - try add the new task to the old best solution before recomputing centralized
 		 */
-		
+
 		// Compute biased value by looking at the weight of the path
 		Double sum = 0d;
 		City current = task.pickupCity;
 		for (City next : task.pickupCity.pathTo(task.deliveryCity)) {
 			EdgeCity ec = new EdgeCity(current, next, current.distanceTo(next));
-			
+
 			Double value = weights.get(ec);
 			if (value == null) {
 				value = 0d;
 			}
-			
+
 			sum += value;
 			current = next;
 		}
-		
+
 		sum /= task.pickupCity.pathTo(task.deliveryCity).size();
-		
+
 		// Value between 0 and 2 (included)
 		double croppedValue = Math.min(2.0, Math.max(0d, (sum / averageEdgeWeight)));
 		// Should be between -(MAX_VARIANCE_WEIGHT / 2) and (MAX_VARIANCE_WEIGHT / 2)
 		double projectedValue = croppedValue * (MAX_VARIANCE_WEIGHT / 2) - MAX_VARIANCE_WEIGHT / 2;
-		
+
 		// Check work to do and see how good it is
 		double distance = task.pickupCity.distanceTo(task.deliveryCity);
 		double workPenalty = 0;
@@ -328,7 +328,7 @@ public class AuctionTemplate implements AuctionBehavior {
 				minBid *= l;
 			}
 			minBid = (long) (Math.round(Math.pow(minBid, 1.0/theirLastBids.size())) * (1 - PREDICTION_ERROR_MARGIN));
-			
+
 			if (toBid < minBid) {
 				System.out.println("Trying to bid too low (" + toBid + "), changing it to: " + minBid);
 				toBid = minBid;
@@ -361,9 +361,43 @@ public class AuctionTemplate implements AuctionBehavior {
 	@Override
 	public List<Plan> plan(List<Vehicle> vehicles, TaskSet tasks) {
 
+		/*
+		int tmp = 0;
+		for(int i = 0; i < bestSolution.getVehicles().size(); i++) {
+			tmp += bestSolution.getTaskNumber(i);
+		}
+		System.out.println("Taskset n : " + tasks.size() + " , us : " + tmp);
+
+		System.out.println("+++++++++");
+		for(Task t : tasks) {
+			System.out.println(t.id + " -- " + t.pickupCity.name + " -> " + t.deliveryCity.name);
+		}
+		System.out.println("+++++++++");
+		*/
+
 		if (!tasks.isEmpty()) {
 			//Solution sol = us.computeCentralized(vehicles, tasks);
 			Solution sol = Solution.recreateSolutionWithGoodTasks(bestSolution, tasks);
+
+			/*
+			tmp = 0;
+			for(int i = 0; i < sol.getVehicles().size(); i++) {
+				tmp += sol.getTaskNumber(i);
+			}
+			System.out.println("Taskset n : " + tasks.size() + " , us : " + tmp);
+			System.out.println("**********");
+			for(Vehicle v : sol.getVehicles()) {
+				AgentTask a = sol.getVehiclesFirstTask()[v.id()];
+
+				while(a != null) {
+					if(a.isPickup())
+					System.out.println(a.getTask().id + " -- " + a.getTask().pickupCity.name + " -> " + a.getTask().deliveryCity.name);
+
+					a = a.getNext();
+				}
+			}
+			System.out.println("**********");
+			*/
 
 			System.out.println("Agent: " + agent.name());
 			System.out.println("Total reward for agent " + agent.id() + " is : " + ourTotalReward);
