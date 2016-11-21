@@ -2,20 +2,17 @@ package template;
 
 //the list of imports
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 
-import org.apache.commons.math.analysis.NewtonSolver;
-
-import cern.jet.math.Bessel;
-import logist.Measures;
-import logist.behavior.AuctionBehavior;
 import logist.agent.Agent;
-import logist.simulation.Vehicle;
+import logist.behavior.AuctionBehavior;
 import logist.plan.Plan;
+import logist.simulation.Vehicle;
 import logist.task.Task;
 import logist.task.TaskDistribution;
 import logist.task.TaskSet;
@@ -31,11 +28,11 @@ import logist.topology.Topology.City;
 public class AuctionTemplate implements AuctionBehavior {
 
 	private static final int INIT_POOL_SIZE = 10;
-	private static final int INIT_MAX_ITER = 10000;
+	private static final int INIT_MAX_ITER = 50000;
 	private static final long MIN_TASKS_FOR_SPECULATION = 5;
 	private static final long MIN_TASKS_FOR_CENTRALIZED = 10;
-	private static final int NB_CENTRALIZED_RUN = 3;
-	private static final int NB_TRY_WITH_NEW_INIT = 3;
+	private static final int NB_CENTRALIZED_RUN = 2;
+	private static final int NB_TRY_WITH_NEW_INIT = 2;
 	private static final int WINDOW_SIZE = 5;
 	private static final double GUESS_ACCEPTANCE_PERCENT = 0.4;
 	private static final double BID_MARGIN_STEP_PERCENT = 0.05;
@@ -71,6 +68,9 @@ public class AuctionTemplate implements AuctionBehavior {
 	private long theirTotalReward = 0;
 	private LinkedList<Long> theirLastBids = new LinkedList<Long>();
 	private Centralized them = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
+
+
+	HashMap<Pair<String, String>, Long> lastBiddingOponent = new HashMap<Pair<String,String>, Long>();
 
 	@Override
 	public void setup(Topology topology, TaskDistribution distribution,
@@ -146,6 +146,9 @@ public class AuctionTemplate implements AuctionBehavior {
 			        break;
 			    }
 			}
+
+			// update the last bid for this task
+			lastBiddingOponent.put(new Pair<String, String>(previous.pickupCity.name, previous.deliveryCity.name), theirBid);
 
 			// Dangerous if more than 2 companies or only us
 			theirTotalReward += theirBid;
@@ -301,6 +304,7 @@ public class AuctionTemplate implements AuctionBehavior {
 		if (!tasks.isEmpty()) {
 			//Solution sol = us.computeCentralized(vehicles, tasks);
 			Solution sol = Solution.recreateSolutionWithGoodTasks(bestSolution, tasks);
+
 			System.out.println("Agent: " + agent.name());
 			System.out.println("Total reward for agent " + agent.id() + " is : " + ourTotalReward);
 			System.out.println("Total cost for agent " + agent.id() + " is : " + sol.getTotalCost());

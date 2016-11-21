@@ -72,7 +72,7 @@ public class Solution {
 
 					if(t.id == tmp.getTask().id) {
 
-						AgentTask newAT = new AgentTask(t, tmp.isPickup());
+						AgentTask newAT = tmp.isPickup() ? new AgentTask(t, tmp.isPickup()) : new AgentTask(t, false);
 
 						if(correctAgentTask[0] == null) {
 							correctAgentTask[0] = newAT;
