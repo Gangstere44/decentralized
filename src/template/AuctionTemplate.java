@@ -2,10 +2,12 @@ package template;
 
 //the list of imports
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 import org.apache.commons.math.analysis.NewtonSolver;
@@ -71,6 +73,12 @@ public class AuctionTemplate implements AuctionBehavior {
 	private long theirTotalReward = 0;
 	private LinkedList<Long> theirLastBids = new LinkedList<Long>();
 	private Centralized them = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
+	
+	private double averageEdgeWeight = 0.;
+	private static final double MAX_VARIANCE_WEIGHT = 0.4;
+	private static final double PREDICTION_ERROR_MARGIN = 0.2;
+	
+	private Map<EdgeCity, Double> weights = new HashMap<EdgeCity, Double>();
 
 	@Override
 	public void setup(Topology topology, TaskDistribution distribution,
@@ -84,6 +92,36 @@ public class AuctionTemplate implements AuctionBehavior {
 
 		long seed = -9019554669489983951L * currentCity.hashCode() * agent.id();
 		this.random = new Random(seed);
+		
+		for (City c1 : topology.cities()) {
+			for (City c2 : topology.cities()) {
+				List<City> path = c1.pathTo(c2);
+				double prob = distribution.probability(c1, c2) / topology.cities().size();
+				if (prob > 0) {
+					for (int i = 0; i < path.size(); i++) {
+						City previous;
+						if (i == 0) {
+							previous = c1;
+						}
+						else {
+							previous = path.get(i - 1);
+						}
+						City current = path.get(i);
+						EdgeCity ec = new EdgeCity(previous, current, previous.distanceTo(current));
+						Double weight = weights.get(ec);
+						if (weight == null) {
+							weight = 0d;
+						}
+						weights.put(ec, weight + prob);
+					}
+				}
+			}
+		}
+		
+		for (Map.Entry<EdgeCity, Double> entry : weights.entrySet()) {
+			averageEdgeWeight += entry.getValue();
+		}
+		averageEdgeWeight /= weights.size();
 	}
 
 	@Override
@@ -164,7 +202,29 @@ public class AuctionTemplate implements AuctionBehavior {
 		 * - keep track of best best solution
 		 * - try add the new task to the old best solution before recomputing centralized
 		 */
-
+		
+		// Compute biased value by looking at the weight of the path
+		Double sum = 0d;
+		City current = task.pickupCity;
+		for (City next : task.pickupCity.pathTo(task.deliveryCity)) {
+			EdgeCity ec = new EdgeCity(current, next, current.distanceTo(next));
+			
+			Double value = weights.get(ec);
+			if (value == null) {
+				value = 0d;
+			}
+			
+			sum += value;
+			current = next;
+		}
+		
+		sum /= task.pickupCity.pathTo(task.deliveryCity).size();
+		
+		// Value between 0 and 2 (included)
+		double croppedValue = Math.min(2.0, Math.max(0d, (sum / averageEdgeWeight)));
+		// Should be between -(MAX_VARIANCE_WEIGHT / 2) and (MAX_VARIANCE_WEIGHT / 2)
+		double projectedValue = croppedValue * (MAX_VARIANCE_WEIGHT / 2) - MAX_VARIANCE_WEIGHT / 2;
+		
 		// Check work to do and see how good it is
 		double distance = task.pickupCity.distanceTo(task.deliveryCity);
 		double workPenalty = 0;
@@ -252,7 +312,7 @@ public class AuctionTemplate implements AuctionBehavior {
 
 		lastGuessUseMargin = false;
 		Long toBid = (long) (ourMarginalCost * Math.min(1, ((double) (ournbTasksHandled + 1) / MIN_TASKS_FOR_CENTRALIZED))
-				* (1 + penalty));
+				* (1 + penalty) * (1 + projectedValue));
 		System.out.println("toBid: " + toBid);
 		if (ourMarginalCost < theirMarginalCost) {
 			lastGuessUseMargin = true;
@@ -261,11 +321,12 @@ public class AuctionTemplate implements AuctionBehavior {
 
 		if (nbTasksHandled > 0) {
 			// Check if we would bid too low compared to what the other is normally doing
-			Long minBid = 0l;
+			Long minBid = 1l;
 			for (Long l : theirLastBids) {
-				minBid += l;
+				minBid *= l;
 			}
-			minBid = (long) (minBid / theirLastBids.size() * 0.8);
+			minBid = (long) (Math.round(Math.pow(minBid, 1.0/theirLastBids.size())) * (1 - PREDICTION_ERROR_MARGIN));
+			
 			if (toBid < minBid) {
 				System.out.println("Trying to bid too low (" + toBid + "), changing it to: " + minBid);
 				toBid = minBid;
