@@ -8,6 +8,8 @@ import logist.task.Task;
 import logist.task.TaskSet;
 
 public class Centralized {
+	
+	private int roundRobin = 0;
 
 	private int poolSize;
 	private int maxIter;
@@ -22,6 +24,10 @@ public class Centralized {
 		this.poolSize = poolSize;
 		this.maxIter = maxIter;
 		this.initSolution = initSolution;
+	}
+	
+	public void setMaxIter(int i) {
+		this.maxIter = i;
 	}
 
 	public void setInitSolution(Solution is) {
@@ -193,7 +199,8 @@ public class Centralized {
 	}
 
 	private Solution createInitSolution(List<Vehicle> vehicles, HashSet<Task> tasks) {
-		int vehiclesIdx = 0;
+		int vehiclesIdx = roundRobin;
+		roundRobin = (roundRobin + 1) % vehicles.size();
 		AgentTask[] lastTasks = new AgentTask[vehicles.size()];
 		int[] taskCounter = new int[vehicles.size()];
 		AgentTask[] vehiclesFirstTask = new AgentTask[vehicles.size()];

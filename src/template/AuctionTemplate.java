@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
+import logist.LogistPlatform;
+import logist.LogistSettings;
 import logist.agent.Agent;
 import logist.behavior.AuctionBehavior;
 import logist.plan.Plan;
@@ -32,13 +34,16 @@ public class AuctionTemplate implements AuctionBehavior {
 	private static final int INIT_MAX_ITER = 50000;
 	private static final long MIN_TASKS_FOR_SPECULATION = 5;
 	private static final long MIN_TASKS_FOR_CENTRALIZED = 10;
-	private static final int NB_CENTRALIZED_RUN = 4;
-	private static final int NB_TRY_WITH_NEW_INIT = 1;
+	private static final int NB_CENTRALIZED_RUN = 10;
 	private static final int WINDOW_SIZE = 5;
 	private static final double GUESS_ACCEPTANCE_PERCENT = 0.4;
 	private static final double BID_MARGIN_STEP_PERCENT = 0.05;
 	private static final double BID_MIN_MARGIN_PERCENT = 0.05;
 	private static final double BID_MAX_MARGIN_PERCENT = 0.5;
+	
+	private static final long MIN_BID = 50;
+	
+	private static final double TIMEOUT_BID = LogistPlatform.getSettings().get(LogistSettings.TimeoutKey.BID);
 
 	private Topology topology;
 	private TaskDistribution distribution;
@@ -48,7 +53,6 @@ public class AuctionTemplate implements AuctionBehavior {
 	private City currentCity;
 
 	private long nbTasksHandled = 0;
-	private double avgTasksWork = 0;
 
 	private HashSet<Task> ourTasks = new HashSet<Task>();
 	private long ourTotalReward = 0;
@@ -58,14 +62,11 @@ public class AuctionTemplate implements AuctionBehavior {
 	private boolean lastGuessUseMargin = false;
 	private Long lastGuess = 0l;
 	private int ournbTasksHandled = 0;
-	//private LinkedList<Long> ourLastGuesses = new LinkedList<Long>();
 	private Centralized us = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
 	private Solution bestSolution = null;
 	private Solution newBestSol = null;
 
 	private HashSet<Task> theirTasks = new HashSet<Task>();
-	private double theirLastCost = 0;
-	private double theirTempCost = 0;
 	private long theirTotalReward = 0;
 	private LinkedList<Long> theirLastBids = new LinkedList<Long>();
 	private Centralized them = new Centralized(INIT_POOL_SIZE, INIT_MAX_ITER);
@@ -73,6 +74,12 @@ public class AuctionTemplate implements AuctionBehavior {
 	private double averageEdgeWeight = 0.;
 	private static final double MAX_VARIANCE_WEIGHT = 0.4;
 	private static final double PREDICTION_ERROR_MARGIN = 0.15;
+	private static final double TIME_MARGIN_BID = 0.8;
+	private static final double EXPLORATION_RATE = 0.2;
+	
+	// Optimizations
+	private static final boolean EDGE_WEIGHT_OPTI = true;
+	private static final boolean SPECULATION_OPTI = true;
 
 	private Map<EdgeCity, Double> weights = new HashMap<EdgeCity, Double>();
 
@@ -137,24 +144,10 @@ public class AuctionTemplate implements AuctionBehavior {
 		if (theirLastBids.size() >= WINDOW_SIZE) {
 			theirLastBids.remove();
 		}
-		theirLastBids.add(theirBid);
-
-		/*
-		if (lastGuessUseMargin) {
-			// Check if we are currently guessing opponent's bid well
-			if (lastGuess * (1 + GUESS_ACCEPTANCE_PERCENT) < theirBid && currentBidMargin >= BID_MIN_MARGIN_PERCENT + BID_MARGIN_STEP_PERCENT) {
-				currentBidMargin -= BID_MARGIN_STEP_PERCENT;
-				System.out.println("Changed margin down to: " + currentBidMargin);
-			}
-			else if (lastGuess * (1 - GUESS_ACCEPTANCE_PERCENT) > theirBid && currentBidMargin <= BID_MAX_MARGIN_PERCENT - BID_MARGIN_STEP_PERCENT) {
-				currentBidMargin += BID_MARGIN_STEP_PERCENT;
-				System.out.println("Changed margin up to: " + currentBidMargin);
-			}
-			else {
-				System.out.println("Current margin seems good: " + currentBidMargin);
-			}
+		
+		if (theirBid != null) {
+			theirLastBids.add(theirBid);
 		}
-		*/
 
 		if (winner == agent.id()) {
 			//currentCity = previous.deliveryCity;
@@ -175,8 +168,12 @@ public class AuctionTemplate implements AuctionBehavior {
 
 			// refresh the new best Solution
 			bestSolution = newBestSol;
+			newBestSol = null;
+			
 		} else {
-			System.out.println("The other agent won by bidding: " + theirBid);
+			if (theirBid != null) {
+				System.out.println("The other agent won by bidding: " + theirBid);
+			}
 
 			// Remove task
 			for (Iterator<Task> i = ourTasks.iterator(); i.hasNext();) {
@@ -187,148 +184,114 @@ public class AuctionTemplate implements AuctionBehavior {
 			    }
 			}
 
-			// update the last bid for this task
-			lastBiddingOponent.put(new Pair<String, String>(previous.pickupCity.name, previous.deliveryCity.name), theirBid);
-
 			// Dangerous if more than 2 companies or only us
-			theirTotalReward += theirBid;
-			theirLastCost = theirTempCost;
+			if (theirBid != null) {
+				theirTotalReward += theirBid;
+			}
 		}
 		System.out.println("******************************************************");
+		
+		// update the last bid for this task
+		if (theirBid != null) {
+			lastBiddingOponent.put(new Pair<String, String>(previous.pickupCity.name, previous.deliveryCity.name), theirBid);
+		}
 	}
 
 	@Override
 	public Long askPrice(Task task) {
+		long start = System.currentTimeMillis();
+		
+		double projectedValue = 0d;
+		if (EDGE_WEIGHT_OPTI) {
+			// Compute biased value by looking at the weight of the path
+			Double sum = 0d;
+			City current = task.pickupCity;
+			for (City next : task.pickupCity.pathTo(task.deliveryCity)) {
+				EdgeCity ec = new EdgeCity(current, next, current.distanceTo(next));
 
-		/*
-		 * - Use probability distribution : weight undirected graph
-		 * - keep track of adversary last bid for a task
-		 * - try to use old best soution as initial solution
-		 * - keep track of best best solution
-		 * - try add the new task to the old best solution before recomputing centralized
-		 */
+				Double value = weights.get(ec);
+				if (value == null) {
+					value = 0d;
+				}
 
-		// Compute biased value by looking at the weight of the path
-		Double sum = 0d;
-		City current = task.pickupCity;
-		for (City next : task.pickupCity.pathTo(task.deliveryCity)) {
-			EdgeCity ec = new EdgeCity(current, next, current.distanceTo(next));
-
-			Double value = weights.get(ec);
-			if (value == null) {
-				value = 0d;
+				sum += value;
+				current = next;
 			}
 
-			sum += value;
-			current = next;
+			sum /= task.pickupCity.pathTo(task.deliveryCity).size();
+
+			// Value between 0 and 2 (included)
+			double croppedValue = Math.min(2.0, Math.max(0d, (sum / averageEdgeWeight)));
+			// Should be between -(MAX_VARIANCE_WEIGHT / 2) and (MAX_VARIANCE_WEIGHT / 2)
+			projectedValue = croppedValue * (MAX_VARIANCE_WEIGHT / 2) - MAX_VARIANCE_WEIGHT / 2;
 		}
-
-		sum /= task.pickupCity.pathTo(task.deliveryCity).size();
-
-		// Value between 0 and 2 (included)
-		double croppedValue = Math.min(2.0, Math.max(0d, (sum / averageEdgeWeight)));
-		// Should be between -(MAX_VARIANCE_WEIGHT / 2) and (MAX_VARIANCE_WEIGHT / 2)
-		double projectedValue = croppedValue * (MAX_VARIANCE_WEIGHT / 2) - MAX_VARIANCE_WEIGHT / 2;
-
-		// Check work to do and see how good it is
-		double distance = task.pickupCity.distanceTo(task.deliveryCity);
-		double workPenalty = 0;
-		if (nbTasksHandled >= MIN_TASKS_FOR_SPECULATION) {
-			double workRatio = (task.weight * distance) / avgTasksWork;
-			if (workRatio > 1) {
-				workPenalty = 1 - 1 / workRatio;
-			}
-		}
-
-		System.out.println("Work penalty: " + workPenalty);
-		// Put penalties together
-		double penalty = 0;
-
-
+		
 		// US
 		ourTasks.add(task);
 
 		// we wait to have at least one solution
-		if(bestSolution != null) {
-			Solution nextPossibleBestSolution = bestSolution.clone();
-			// firstly, we only add the new task to the current best solution and try
-			// centralized on it
-			AgentTask p = new AgentTask(task, true);
-			AgentTask d = new AgentTask(task, false);
-			nextPossibleBestSolution.addTaskForVehicle(0, d, null);
-			nextPossibleBestSolution.addTaskForVehicle(0, p, null);
+		Solution newInitSol = bestSolution == null ? new Solution(0, new AgentTask[agent.vehicles().size()], agent.vehicles(), new int[agent.vehicles().size()]) : bestSolution.clone();
+		// firstly, we only add the new task to the current best solution and try
+		// centralized on it
+		AgentTask p = new AgentTask(task, true);
+		AgentTask d = new AgentTask(task, false);
+		newInitSol.addTaskForVehicle(0, d, null);
+		newInitSol.addTaskForVehicle(0, p, null);
 
-			Solution tmpNewBestSol = null;
-			newBestSol = null;
-			// we try to find a solution with the old best solution
-			for(int i = 0; i < NB_CENTRALIZED_RUN; i++) {
-				Solution tmpSol = null;
-				us.setInitSolution(nextPossibleBestSolution);
-				// we try again with the init solution being the last solution computed
-				for(int j = 0; j < NB_TRY_WITH_NEW_INIT; j++) {
-					tmpSol = us.computeCentralized(agent.vehicles(), ourTasks);
-					tmpNewBestSol = tmpNewBestSol == null || tmpNewBestSol.getTotalCost() > tmpSol.getTotalCost() ? tmpSol : tmpNewBestSol;
-					us.setInitSolution(tmpSol);
-				}
+		// we try to find a solution with the old best solution
+		us.setInitSolution(newInitSol);
+		// we try again with the init solution being the last solution computed
+		newBestSol = us.computeCentralized(agent.vehicles(), ourTasks);
 
-				// we take only if the new solution are better than the previous one
-				newBestSol = newBestSol == null || newBestSol.getTotalCost() > tmpNewBestSol.getTotalCost() ? tmpNewBestSol : newBestSol;
-			}
-
-			// we get ready to do normal centralized
-			us.setInitSolution(null);
-		}
+		// we get ready to do normal centralized
+		us.setInitSolution(null);
+		
 		// now we try to recompute entierly centralized
-		//ourTasks.add(task);
 		ourTempCost = 0;
+		int nbCentralizedRun = 1;
+		
+		if (bestSolution != null) {
+			System.out.println("-1. " + ourLastCost + " " + bestSolution.getTotalCost());
+		}
+		
+		System.out.println("0. " + newBestSol.getTotalCost());
 		for (int i = 0; i < NB_CENTRALIZED_RUN; i++) {
+			// Vary init solution
+			if (i % 2 == 0) {
+				us.setInitSolution(null);
+				us.setMaxIter((int) (INIT_MAX_ITER * (1 + EXPLORATION_RATE)));
+			}
+			else {
+				us.setInitSolution(newInitSol);
+				us.setMaxIter((int) (INIT_MAX_ITER * (1 - EXPLORATION_RATE)));
+			}
+			
 			Solution ourNewSol = us.computeCentralized(agent.vehicles(), ourTasks);
 			newBestSol = newBestSol == null || newBestSol.getTotalCost() > ourNewSol.getTotalCost() ? ourNewSol : newBestSol;
-			ourTempCost += ourNewSol.getTotalCost();
+			System.out.println((nbCentralizedRun + 1) + ". " + ourNewSol.getTotalCost());
+			nbCentralizedRun++;
+			double now = (double) (System.currentTimeMillis() - start);
+			if (now / nbCentralizedRun + now > TIME_MARGIN_BID * TIMEOUT_BID) {
+				System.out.println("BREAK! Too much time (iteration " + nbCentralizedRun + ")");
+				break;
+			}
 		}
-		ourTempCost /= NB_CENTRALIZED_RUN;
+		ourTempCost = newBestSol.getTotalCost();
 
 		Long ourMarginalCost = ourLastCost == 0 ? Math.round(ourTempCost) :
 							Math.max(0, Math.round(ourTempCost - ourLastCost));
 
-		/*
-		//THEM
-		theirTasks.add(task);
-		theirTempCost = 0;
-		for (int i = 0; i < NB_CENTRALIZED_RUN; i++) {
-			Solution theirNewSol = them.computeCentralized(agent.vehicles(), theirTasks);
-			theirTempCost += theirNewSol.getTotalCost();
-		}
-		theirTempCost /= NB_CENTRALIZED_RUN;
-
-		Long theirMarginalCost = theirLastCost == 0 ? Math.round(theirTempCost) :
-							Math.max(0, Math.round(theirTempCost - theirLastCost));
-
-		*/
-		/*
-		// Add guess to history of our guesses of their bids
-		if (ourLastGuesses.size() >= WINDOW_SIZE) {
-			ourLastGuesses.remove();
-		}
-		ourLastGuesses.add(theirMarginalCost);
-		*/
 
 		System.out.println("Our marginal cost: " + ourMarginalCost);
-		//System.out.println("Their marginal cost: " + theirMarginalCost);
-
 
 		lastGuessUseMargin = false;
-		Long toBid = (long) (ourMarginalCost * Math.min(1, ((double) (ournbTasksHandled + 1) / MIN_TASKS_FOR_CENTRALIZED))
-				* (1 + penalty) * (1 + projectedValue));
+		Long toBid = ourMarginalCost;
 		System.out.println("toBid: " + toBid);
-		/*
-		if (ourMarginalCost < theirMarginalCost) {
-			lastGuessUseMargin = true;
-			toBid += (long) ((theirMarginalCost - ourMarginalCost) * (1 - currentBidMargin));
-		}
-		*/
 
-		if (nbTasksHandled > 0) {
+		if (nbTasksHandled > 0 && SPECULATION_OPTI) {
+			Pair<String, String> pair = new Pair<String, String>(task.pickupCity.name, task.deliveryCity.name);
+			Long lastOpponentBidForPair = lastBiddingOponent.get(pair);
+			
 			// Check if we would bid too low compared to what the other is normally doing
 			Long minBid = 1l;
 			for (Long l : theirLastBids) {
@@ -336,75 +299,30 @@ public class AuctionTemplate implements AuctionBehavior {
 			}
 			minBid = (long) (Math.round(Math.pow(minBid, 1.0/theirLastBids.size())) * (1 - PREDICTION_ERROR_MARGIN));
 
-			if (toBid < minBid) {
+			if (toBid < minBid && (lastOpponentBidForPair == null || lastOpponentBidForPair >= minBid)) {
 				System.out.println("Trying to bid too low (" + toBid + "), changing it to: " + minBid);
 				toBid = minBid;
 			}
+			else {
+				if (lastOpponentBidForPair != null && toBid < lastOpponentBidForPair) {
+					toBid = (long) ((toBid + lastOpponentBidForPair) * 0.5);
+				}
+			}
 		}
+		
+		toBid = (long) (toBid * Math.min(1, ((double) (ournbTasksHandled + 1) / MIN_TASKS_FOR_CENTRALIZED)) * (1 + projectedValue));
 
 		// Update weight and distance
-		avgTasksWork = (avgTasksWork * nbTasksHandled + task.weight * distance) / (nbTasksHandled + 1);
 		nbTasksHandled++;
-
-		return toBid;
-
-		/*
-		if (vehicle.capacity() < task.weight)
-			return null;
-
-		long distanceTask = task.pickupCity.distanceUnitsTo(task.deliveryCity);
-		long distanceSum = distanceTask
-				+ currentCity.distanceUnitsTo(task.pickupCity);
-		double marginalCost = Measures.unitsToKM(distanceSum
-				* vehicle.costPerKm());
-
-		double ratio = 1.0 + (random.nextDouble() * 0.05 * task.id);
-		double bid = ratio * marginalCost;
-
-		return (long) Math.round(bid);
-		*/
+		
+		return toBid < MIN_BID ? MIN_BID : toBid;
 	}
 
 	@Override
 	public List<Plan> plan(List<Vehicle> vehicles, TaskSet tasks) {
 
-		/*
-		int tmp = 0;
-		for(int i = 0; i < bestSolution.getVehicles().size(); i++) {
-			tmp += bestSolution.getTaskNumber(i);
-		}
-		System.out.println("Taskset n : " + tasks.size() + " , us : " + tmp);
-
-		System.out.println("+++++++++");
-		for(Task t : tasks) {
-			System.out.println(t.id + " -- " + t.pickupCity.name + " -> " + t.deliveryCity.name);
-		}
-		System.out.println("+++++++++");
-		*/
-
 		if (!tasks.isEmpty()) {
-			//Solution sol = us.computeCentralized(vehicles, tasks);
 			Solution sol = Solution.recreateSolutionWithGoodTasks(bestSolution, tasks);
-
-			/*
-			tmp = 0;
-			for(int i = 0; i < sol.getVehicles().size(); i++) {
-				tmp += sol.getTaskNumber(i);
-			}
-			System.out.println("Taskset n : " + tasks.size() + " , us : " + tmp);
-			System.out.println("**********");
-			for(Vehicle v : sol.getVehicles()) {
-				AgentTask a = sol.getVehiclesFirstTask()[v.id()];
-
-				while(a != null) {
-					if(a.isPickup())
-					System.out.println(a.getTask().id + " -- " + a.getTask().pickupCity.name + " -> " + a.getTask().deliveryCity.name);
-
-					a = a.getNext();
-				}
-			}
-			System.out.println("**********");
-			*/
 
 			System.out.println("Agent: " + agent.name());
 			System.out.println("Total reward for agent " + agent.id() + " is : " + ourTotalReward);
@@ -424,18 +342,6 @@ public class AuctionTemplate implements AuctionBehavior {
 			return plans;
 		}
 
-		/*
-//		System.out.println("Agent " + agent.id() + " has tasks " + tasks);
-
-		Plan planVehicle1 = naivePlan(vehicle, tasks);
-
-		List<Plan> plans = new ArrayList<Plan>();
-		plans.add(planVehicle1);
-		while (plans.size() < vehicles.size())
-			plans.add(Plan.EMPTY);
-
-		return plans;
-		*/
 	}
 
 
