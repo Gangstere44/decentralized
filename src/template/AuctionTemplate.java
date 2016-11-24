@@ -29,10 +29,10 @@ import logist.topology.Topology.City;
 public class AuctionTemplate implements AuctionBehavior {
 
 	private static final int INIT_POOL_SIZE = 10;
-	private static final int INIT_MAX_ITER = 10000;
+	private static final int INIT_MAX_ITER = 50000;
 	private static final long MIN_TASKS_FOR_SPECULATION = 5;
 	private static final long MIN_TASKS_FOR_CENTRALIZED = 10;
-	private static final int NB_CENTRALIZED_RUN = 1;
+	private static final int NB_CENTRALIZED_RUN = 4;
 	private static final int NB_TRY_WITH_NEW_INIT = 1;
 	private static final int WINDOW_SIZE = 5;
 	private static final double GUESS_ACCEPTANCE_PERCENT = 0.4;
@@ -72,7 +72,7 @@ public class AuctionTemplate implements AuctionBehavior {
 
 	private double averageEdgeWeight = 0.;
 	private static final double MAX_VARIANCE_WEIGHT = 0.4;
-	private static final double PREDICTION_ERROR_MARGIN = 0.2;
+	private static final double PREDICTION_ERROR_MARGIN = 0.15;
 
 	private Map<EdgeCity, Double> weights = new HashMap<EdgeCity, Double>();
 
@@ -139,6 +139,7 @@ public class AuctionTemplate implements AuctionBehavior {
 		}
 		theirLastBids.add(theirBid);
 
+		/*
 		if (lastGuessUseMargin) {
 			// Check if we are currently guessing opponent's bid well
 			if (lastGuess * (1 + GUESS_ACCEPTANCE_PERCENT) < theirBid && currentBidMargin >= BID_MIN_MARGIN_PERCENT + BID_MARGIN_STEP_PERCENT) {
@@ -153,6 +154,7 @@ public class AuctionTemplate implements AuctionBehavior {
 				System.out.println("Current margin seems good: " + currentBidMargin);
 			}
 		}
+		*/
 
 		if (winner == agent.id()) {
 			//currentCity = previous.deliveryCity;
@@ -169,6 +171,7 @@ public class AuctionTemplate implements AuctionBehavior {
 			        break;
 			    }
 			}
+			
 
 			// refresh the new best Solution
 			bestSolution = newBestSol;
@@ -239,7 +242,7 @@ public class AuctionTemplate implements AuctionBehavior {
 
 		System.out.println("Work penalty: " + workPenalty);
 		// Put penalties together
-		double penalty = workPenalty;
+		double penalty = 0;
 
 
 		// US
@@ -288,6 +291,7 @@ public class AuctionTemplate implements AuctionBehavior {
 		Long ourMarginalCost = ourLastCost == 0 ? Math.round(ourTempCost) :
 							Math.max(0, Math.round(ourTempCost - ourLastCost));
 
+		/*
 		//THEM
 		theirTasks.add(task);
 		theirTempCost = 0;
@@ -300,6 +304,7 @@ public class AuctionTemplate implements AuctionBehavior {
 		Long theirMarginalCost = theirLastCost == 0 ? Math.round(theirTempCost) :
 							Math.max(0, Math.round(theirTempCost - theirLastCost));
 
+		*/
 		/*
 		// Add guess to history of our guesses of their bids
 		if (ourLastGuesses.size() >= WINDOW_SIZE) {
@@ -309,17 +314,19 @@ public class AuctionTemplate implements AuctionBehavior {
 		*/
 
 		System.out.println("Our marginal cost: " + ourMarginalCost);
-		System.out.println("Their marginal cost: " + theirMarginalCost);
+		//System.out.println("Their marginal cost: " + theirMarginalCost);
 
 
 		lastGuessUseMargin = false;
 		Long toBid = (long) (ourMarginalCost * Math.min(1, ((double) (ournbTasksHandled + 1) / MIN_TASKS_FOR_CENTRALIZED))
 				* (1 + penalty) * (1 + projectedValue));
 		System.out.println("toBid: " + toBid);
+		/*
 		if (ourMarginalCost < theirMarginalCost) {
 			lastGuessUseMargin = true;
 			toBid += (long) ((theirMarginalCost - ourMarginalCost) * (1 - currentBidMargin));
 		}
+		*/
 
 		if (nbTasksHandled > 0) {
 			// Check if we would bid too low compared to what the other is normally doing

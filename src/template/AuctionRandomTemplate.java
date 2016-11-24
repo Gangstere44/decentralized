@@ -53,7 +53,6 @@ public class AuctionRandomTemplate implements AuctionBehavior {
 
 	@Override
 	public void auctionResult(Task previous, int winner, Long[] bids) {
-
 		if (winner == agent.id()) {
 			totalReward += bids[agent.id()];
 		}
